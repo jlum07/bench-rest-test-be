@@ -3,22 +3,29 @@
             [cheshire.core :as json])
   (:gen-class))
 
-(def api-url "https://resttest.bench.co/transactions/")
+(defn api-url [page]
+  (str "https://resttest.bench.co/transactions/" page ".json"))
 
 (defn get-paginated-api-transactions []
   (loop [data []
          page 1]
-    (let [resp (future (http/get (str api-url page ".json")))
-          {:keys [totalCount transactions] :as body-json} (json/parse-string (:body @resp) true)
+    (let [resp (future (http/get (api-url page)))
+          {:keys [totalCount transactions]} (json/parse-string (:body @resp) true)
           new-data (concat data transactions)]
-      ;(clojure.pprint/pprint body-json)
       (if (< (count new-data) totalCount)
         (recur new-data (inc page))
         new-data))))
 
+(defn calculate-daily-totals [transactions]
+  (reduce (fn [acc {:keys [Date Amount]}]
+            (merge-with + acc {Date (read-string Amount)}))
+          {}
+          transactions))
+
 (defn -main
   [& args]
-  (let [transactions (get-paginated-api-transactions)]
-    (clojure.pprint/pprint transactions)
+  (let [transactions (get-paginated-api-transactions)
+        daily-totals (calculate-daily-totals transactions)]
+    (clojure.pprint/pprint daily-totals)
     )
   )
