@@ -18,7 +18,9 @@
 
 (defn calculate-daily-totals [transactions]
   (reduce (fn [acc {:keys [Date Amount]}]
-            (merge-with + acc {Date (read-string Amount)}))
+            ;BigDecimal fix for floating point precision error
+            ;(+ 20000 -10.99 -35.7) === 19953.309999999998 which is not right
+            (merge-with + acc {Date (BigDecimal. Amount)}))
           {}
           transactions))
 
