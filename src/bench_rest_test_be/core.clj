@@ -6,36 +6,31 @@
 (defn api-url [page]
   (str "https://resttest.bench.co/transactions/" page ".json"))
 
-(defn get-paginated-api-transactions []
-  "Calls paginated api sequentially and a list of all transactions"
-  (loop [data []
-         page 1]
-    (let [resp (future (http/get (api-url page)))
-          {:keys [totalCount transactions]} (json/parse-string (:body @resp) true)
-          new-data (concat data transactions)]
-      (if (< (count new-data) totalCount)
-        (recur new-data (inc page))
-        new-data))))
+(defn parse-response-body [resp]
+  ;TODO - Find a better place/way for status code handling
+  (if (= (:status resp) 200)
+    (-> (:body resp)
+        (json/parse-string true))
+    (throw (Exception. "Error - API returned non 200 code"))))
 
 (defn get-paginated-api-transactions-async []
   "Calls first page of api to calculate number of pages to call, then calls the remaining pages asynchronously.
   Assumes 10 transactions per page max."
   (let [response-1 (future (http/get (api-url 1)))
-        {:keys [totalCount transactions]} (json/parse-string (:body @response-1) true)
+        {:keys [totalCount transactions]} (parse-response-body @response-1)
         pages (Math/ceil (/ totalCount 10))]
     (if (> pages 1)
         (let [remaining-pages (range 2 (inc pages))
               rest-responses (future (map (fn [page] (http/get (api-url page))) remaining-pages))
-              rest-transactions (future (mapcat (fn [resp] (-> (:body resp)
-                                                               (json/parse-string true)
-                                                               :transactions)) @rest-responses))]
+              rest-transactions (future (mapcat (fn [resp] (:transactions (parse-response-body resp))) @rest-responses))]
           (concat transactions @rest-transactions))
         transactions)))
 
 (defn calculate-daily-totals [transactions]
+  "Returns a map with keys as the Date and values as the daily transactions totals for those days."
   (reduce (fn [acc {:keys [Date Amount]}]
             ;BigDecimal fix for floating point precision error
-            ;(+ 20000 -10.99 -35.7) === 19953.309999999998 which is not right
+            ;(+ 20000 -10.99 -35.7) ==> 19953.309999999998 ... which is not right
             (merge-with + acc {Date (BigDecimal. Amount)}))
           {}
           transactions))
